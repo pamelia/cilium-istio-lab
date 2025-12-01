@@ -29,3 +29,4 @@
   3. Test L4 authorization policies
 
   The Istio ambient installation should now be complete. If you want to test it, you can deploy a sample application and verify the ambient mesh captures traffic through ztunnel.
+# cilium-istio-lab
