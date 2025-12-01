@@ -1,0 +1,44 @@
+# L4 AuthorizationPolicy to lock down access in the demo namespace
+# Only allows:
+# - hello-gateway-istio -> hello-app on port 8000
+# - hello-app -> postgres on port 5432
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: hello-app-policy
+  namespace: demo
+spec:
+  selector:
+    matchLabels:
+      app: hello-app
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/demo/sa/hello-gateway-istio
+      to:
+        - operation:
+            ports:
+              - "8000"
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: postgres-policy
+  namespace: demo
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/demo/sa/hello-app
+      to:
+        - operation:
+            ports:
+              - "5432"

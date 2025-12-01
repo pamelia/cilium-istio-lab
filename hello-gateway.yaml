@@ -1,0 +1,31 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: hello-gateway
+  namespace: demo
+spec:
+  gatewayClassName: istio
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hello-route
+  namespace: demo
+spec:
+  parentRefs:
+    - name: hello-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: hello-app
+          port: 8000
