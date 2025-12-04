@@ -1,0 +1,11 @@
+# PeerAuthentication policy to enforce STRICT mTLS mode
+# This ensures all traffic within the demo namespace uses mTLS
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: demo
+spec:
+  mtls:
+    mode: STRICT
