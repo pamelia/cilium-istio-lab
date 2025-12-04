@@ -1,4 +1,10 @@
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres
+  namespace: demo
+---
+apiVersion: v1
 kind: Secret
 metadata:
   name: postgres-secret
@@ -24,6 +30,7 @@ spec:
         app: postgres
         version: v1
     spec:
+      serviceAccountName: postgres
       containers:
         - name: postgres
           image: postgres:17
