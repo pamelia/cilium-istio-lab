@@ -419,8 +419,8 @@ kubectl get peerauthentication,authorizationpolicy -n demo
 # Check workload status
 kubectl get pods -n demo
 
-# Verify mTLS
-istioctl x describe pod <pod-name> -n demo
+# Verify mTLS is enforced (check PeerAuthentication)
+kubectl get peerauthentication -n demo -o yaml
 ```
 
 ## Testing
@@ -431,20 +431,14 @@ istioctl x describe pod <pod-name> -n demo
 # Get gateway external IP (for LoadBalancer) or use port-forward
 kubectl port-forward -n demo svc/hello-gateway-istio 8080:80
 
-# Access application
+# Access application (shows status page with DB, GitHub, and Cloudflare connectivity)
 curl http://localhost:8080/
+
+# Check health endpoint
 curl http://localhost:8080/health
-curl http://localhost:8080/github
-```
 
-### Verify mTLS
-
-```bash
-# Check mTLS status
-istioctl x describe pod -n demo $(kubectl get pod -n demo -l app=hello-app -o jsonpath='{.items[0].metadata.name}')
-
-# View certificates
-kubectl exec -n istio-system ds/ztunnel -- curl -s localhost:15000/certs
+# Or open in browser for a nice UI
+open http://localhost:8080/
 ```
 
 ### Test Policy Enforcement
@@ -466,107 +460,14 @@ curl postgres:5432
 # Get endpoint ID for hello-app pod
 kubectl get ciliumendpoints -n demo
 
-# View applied policies
-cilium policy get <endpoint-id>
+# View applied policies (run from inside Cilium pod)
+kubectl exec -n kube-system ds/cilium -- cilium-dbg policy get <endpoint-id>
 
-# Monitor policy decisions
-cilium monitor --type policy-verdict
+# Monitor policy decisions (run from inside Cilium pod)
+kubectl exec -n kube-system ds/cilium -- cilium-dbg monitor --type policy-verdict
 ```
 
-## Observability
 
-### Cilium
-
-```bash
-# Hubble (Cilium's network observability)
-cilium hubble enable
-cilium hubble ui
-
-# View network flows
-hubble observe -n demo --follow
-```
-
-### Istio
-
-```bash
-# Prometheus (if installed)
-kubectl port-forward -n istio-system svc/prometheus 9090:9090
-
-# Grafana (if installed)
-kubectl port-forward -n istio-system svc/grafana 3000:3000
-
-# View ztunnel logs
-kubectl logs -n istio-system -l app=ztunnel --tail=100 -f
-```
-
-## Troubleshooting
-
-### Connection Failures
-
-If connections fail, check each layer:
-
-1. **Cilium NetworkPolicy**:
-   ```bash
-   cilium monitor --type drop -n demo
-   kubectl get ciliumnetworkpolicies -n demo
-   ```
-
-2. **Istio AuthorizationPolicy**:
-   ```bash
-   kubectl logs -n istio-system -l app=ztunnel | grep -i denied
-   kubectl get authorizationpolicy -n demo -o yaml
-   ```
-
-3. **mTLS Issues**:
-   ```bash
-   istioctl x describe pod <pod-name> -n demo
-   kubectl logs -n istio-system -l app=istiod | grep -i certificate
-   ```
-
-### Health Check Issues in Ambient Mode
-
-Kubelet health probes bypass ztunnel and appear as `world` entity in Cilium policies. Ensure health check policies allow `fromEntities: [world]`.
-
-### DNS Issues
-
-If DNS resolution fails, ensure:
-- `allow-dns` policy is applied in demo namespace
-- Pods can reach ztunnel (HBONE policies applied)
-- ztunnel can reach kube-dns (no restrictive policies on istio-system)
-
-## Key Differences: Istio Ambient vs Sidecar
-
-| Aspect | Ambient Mode (ztunnel) | Sidecar Mode |
-|--------|----------------------|--------------|
-| **Deployment** | DaemonSet (one per node) | Container in each pod |
-| **Resource Usage** | Shared, lower overhead | Per-pod overhead |
-| **Latency** | Lower (no extra hop) | Higher (intra-pod hop) |
-| **L7 Features** | Requires waypoint proxy | Built-in to sidecar |
-| **mTLS** | ✅ Full support | ✅ Full support |
-| **Identity** | ✅ ServiceAccount-based | ✅ ServiceAccount-based |
-| **Policy** | L4 by default, L7 with waypoint | L7 by default |
-| **Upgrades** | Rolling update DaemonSet | Restart all pods |
-
-## Security Best Practices
-
-1. **Always use STRICT mTLS** in production (via PeerAuthentication)
-2. **Apply both Cilium and Istio policies** for defense in depth
-3. **Use dedicated ServiceAccounts** for each workload
-4. **Default deny all traffic**, then explicitly allow required paths
-5. **Limit external egress** using Cilium's `toEntities` and SNI filtering
-6. **Rotate secrets regularly** (database passwords, API keys)
-7. **Monitor policy violations** using Cilium Hubble and Istio metrics
-8. **Test policy changes** in non-production environments first
-9. **Document exceptions** when policies must be relaxed
-10. **Regular security audits** of all policies
-
-## Contributing
-
-This is a demo/lab project. Contributions welcome for:
-- Additional security scenarios
-- More complex traffic patterns
-- Alternative deployment methods
-- Documentation improvements
 
 ## License
 
@@ -669,7 +570,8 @@ spec:
 
 1. Check Cilium policy drops:
 ```bash
-kubectl exec -n kube-system ds/cilium -- cilium-dbg monitor --type drop
+# Monitor from specific Cilium pod on the node where your workload runs
+kubectl exec -n kube-system <cilium-pod-name> -- cilium-dbg monitor --type drop
 ```
 
 2. Check Istio policy denials:
