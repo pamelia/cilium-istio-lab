@@ -1,0 +1,41 @@
+# Base Cilium Network Policies for demo namespace
+# These foundational policies should be applied first
+#
+# - default-deny: Blocks all ingress/egress by default
+# - allow-dns: Permits DNS queries for all pods (required for name resolution)
+
+---
+# Default deny all ingress and egress in demo namespace
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: default-deny
+  namespace: demo
+spec:
+  endpointSelector: {}
+  ingressDeny:
+    - {}
+  egressDeny:
+    - {}
+---
+# Allow all pods in demo namespace to make DNS queries to any destination
+# NOTE: In Istio ambient mode, all traffic flows through ztunnel which has no policy enforcement.
+# This means DNS queries can reach any destination regardless of this policy's specificity.
+# To truly restrict DNS destinations, you would need to:
+#   1. Apply policies to ztunnel in istio-system namespace, or
+#   2. Use Cilium DNS proxy with L7 visibility, or
+#   3. Use Istio ServiceEntry resources to control external access
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: demo
+spec:
+  endpointSelector: {}
+  egress:
+    - toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

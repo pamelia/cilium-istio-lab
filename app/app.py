@@ -1,4 +1,6 @@
+import json
 import os
+import urllib.request
 
 import psycopg2
 from flask import Flask
@@ -34,8 +36,50 @@ def get_message():
         conn.close()
 
 
+def check_github_status():
+    """Check GitHub API status by calling api.github.com"""
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/", headers={"User-Agent": "hello-app/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                return True, "API responding"
+    except Exception as e:
+        return False, str(e)[:50]
+    return False, "Unknown error"
+
+
+def check_cloudflare_status():
+    """Check Cloudflare API status by calling api.cloudflare.com"""
+    import ssl
+
+    try:
+        # Create SSL context that doesn't verify certificates
+        # (needed due to ztunnel TLS handling in ambient mode)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        req = urllib.request.Request(
+            "https://api.cloudflare.com/client/v4/",
+            headers={"User-Agent": "hello-app/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
+            # Cloudflare API returns 400 without auth, but that means it's reachable
+            return True, "API responding"
+    except urllib.request.HTTPError as e:
+        # 400/401/403 means the API is reachable but requires auth
+        if e.code in (400, 401, 403):
+            return True, "API responding (auth required)"
+        return False, f"HTTP {e.code}"
+    except Exception as e:
+        return False, str(e)[:50]
+
+
 @app.route("/")
 def index():
+    # Database status
     try:
         db_message = get_message()
         db_status = "Connected"
@@ -44,6 +88,16 @@ def index():
         db_message = str(e)
         db_status = "Disconnected"
         db_status_class = "error"
+
+    # GitHub status
+    github_ok, github_message = check_github_status()
+    github_status = "Connected" if github_ok else "Unreachable"
+    github_status_class = "success" if github_ok else "error"
+
+    # Cloudflare status
+    cloudflare_ok, cloudflare_message = check_cloudflare_status()
+    cloudflare_status = "Connected" if cloudflare_ok else "Unreachable"
+    cloudflare_status_class = "success" if cloudflare_ok else "error"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -71,7 +125,7 @@ def index():
             border-radius: 16px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             padding: 40px;
-            max-width: 500px;
+            max-width: 600px;
             width: 100%;
         }}
         h1 {{
@@ -113,6 +167,12 @@ def index():
         .card-icon.db {{
             background: linear-gradient(135deg, #11998e, #38ef7d);
         }}
+        .card-icon.github {{
+            background: linear-gradient(135deg, #24292e, #404448);
+        }}
+        .card-icon.cloudflare {{
+            background: linear-gradient(135deg, #f38020, #faad3f);
+        }}
         .card-title {{
             font-weight: 600;
             color: #333;
@@ -151,6 +211,15 @@ def index():
         .status.error .status-dot {{
             background: #dc3545;
         }}
+        .section-title {{
+            font-size: 0.85rem;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 24px 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }}
         .footer {{
             text-align: center;
             margin-top: 24px;
@@ -162,7 +231,7 @@ def index():
 <body>
     <div class="container">
         <h1>Cilium Istio Lab</h1>
-        <p class="subtitle">Flask Application with PostgreSQL</p>
+        <p class="subtitle">Flask Application with Network Policy Demo</p>
 
         <div class="card">
             <div class="card-header">
@@ -174,16 +243,48 @@ def index():
             </div>
         </div>
 
+        <div class="section-title">Internal Services</div>
+
         <div class="card">
             <div class="card-header">
                 <div class="card-icon db">&#x1F5C4;</div>
-                <span class="card-title">Database</span>
+                <span class="card-title">PostgreSQL Database</span>
             </div>
             <div class="card-content">
                 {db_message}
                 <div class="status {db_status_class}">
                     <span class="status-dot"></span>
                     {db_status}
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">External Services (Egress)</div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon github">&#x1F419;</div>
+                <span class="card-title">GitHub API</span>
+            </div>
+            <div class="card-content">
+                api.github.com
+                <div class="status {github_status_class}">
+                    <span class="status-dot"></span>
+                    {github_status}
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div class="card-icon cloudflare">&#x2601;</div>
+                <span class="card-title">Cloudflare API</span>
+            </div>
+            <div class="card-content">
+                api.cloudflare.com
+                <div class="status {cloudflare_status_class}">
+                    <span class="status-dot"></span>
+                    {cloudflare_status}
                 </div>
             </div>
         </div>

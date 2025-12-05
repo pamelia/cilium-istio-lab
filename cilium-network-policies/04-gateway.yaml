@@ -1,0 +1,133 @@
+# Istio Gateway Policies
+# All Cilium network policies for the hello-gateway ingress gateway
+#
+# Includes:
+# - Egress to hello-app backend
+# - Egress to istiod for xDS configuration
+# - Ingress from ztunnel (ambient mode)
+# - Health check ingress
+
+---
+# Allow gateway to reach hello-app
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gateway-to-hello-app
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: hello-gateway
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: hello-app
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+---
+# Allow gateway to communicate with istiod for xDS (via service IP and direct)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gateway-to-istiod
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: hello-gateway
+  egress:
+    # Allow to istiod endpoints directly
+    - toEndpoints:
+        - matchLabels:
+            app: istiod
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15010"
+              protocol: TCP
+            - port: "15012"
+              protocol: TCP
+            - port: "15014"
+              protocol: TCP
+            - port: "15017"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # Allow to istiod service IP
+    - toServices:
+        - k8sService:
+            namespace: istio-system
+            serviceName: istiod
+      toPorts:
+        - ports:
+            - port: "15010"
+              protocol: TCP
+            - port: "15012"
+              protocol: TCP
+            - port: "15014"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # Allow to any entity for istiod ports (fallback for ambient/HBONE)
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "15010"
+              protocol: TCP
+            - port: "15012"
+              protocol: TCP
+            - port: "15014"
+              protocol: TCP
+---
+# Allow gateway to receive traffic from ztunnel
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gateway-from-ztunnel
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: hello-gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: ztunnel
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "15006"
+              protocol: TCP
+            - port: "15020"
+              protocol: TCP
+            - port: "15021"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+---
+# Allow gateway health checks from prometheus and kubelet
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gateway-health-checks
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: hello-gateway
+  ingress:
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "15020"
+              protocol: TCP
+            - port: "15021"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP

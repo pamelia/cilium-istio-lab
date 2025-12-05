@@ -1,4 +1,29 @@
-# kind-config.yaml
+# kind Cluster Configuration
+# Creates a local Kubernetes cluster with custom networking settings for Cilium + Istio
+#
+# Key configurations:
+# - disableDefaultCNI: true
+#   * Disables kind's default CNI (kindnet)
+#   * Allows Cilium to be installed as the primary CNI
+#   * Cilium will handle pod networking, routing, and policy enforcement
+#
+# - kubeProxyMode: iptables
+#   * Uses iptables mode for kube-proxy (default)
+#   * Alternative: ipvs (for better performance at scale)
+#   * Cilium can optionally replace kube-proxy entirely (not done here)
+#
+# - nodes: control-plane + worker
+#   * Creates a 2-node cluster for realistic multi-node scenarios
+#   * All demo workloads run on the worker node
+#   * Control plane runs etcd, kube-apiserver, kube-controller-manager, kube-scheduler
+#
+# Usage:
+#   kind create cluster --name ebpf-lab --config kind-config.yaml
+#
+# After cluster creation:
+#   1. Install Cilium as CNI
+#   2. Install Istio in ambient mode
+#   3. Deploy demo workloads
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
@@ -7,4 +32,3 @@ networking:
 nodes:
   - role: control-plane
   - role: worker
-

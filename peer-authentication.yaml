@@ -1,5 +1,33 @@
-# PeerAuthentication policy to enforce STRICT mTLS mode
-# This ensures all traffic within the demo namespace uses mTLS
+# Istio PeerAuthentication Policy
+# Enforces STRICT mTLS mode for all workload-to-workload communication in the demo namespace
+#
+# What this does:
+# - Forces all traffic between workloads in 'demo' namespace to use mutual TLS
+# - Rejects any plaintext traffic between workloads
+# - mTLS certificates are automatically issued by istiod (Istio's control plane)
+# - Certificates contain SPIFFE identity based on Kubernetes ServiceAccount
+#
+# How it works in Istio Ambient Mode:
+# - ztunnel (L4 proxy) handles mTLS encryption/decryption transparently
+# - No sidecars required - ztunnel runs as a DaemonSet on each node
+# - Traffic flow: Pod → ztunnel (encrypt with mTLS) → network → ztunnel (decrypt) → Pod
+# - Workloads are unaware of mTLS - it's transparent at the network layer
+#
+# Certificate details:
+# - Issued by: istiod (cluster.local CA)
+# - Identity format: spiffe://cluster.local/ns/demo/sa/<serviceaccount-name>
+# - Auto-rotated before expiry (default: 24h lifetime, rotated at 12h)
+# - Private keys never leave the node - stored in ztunnel memory
+#
+# STRICT mode vs PERMISSIVE:
+# - STRICT: Only accept mTLS connections (recommended for zero-trust)
+# - PERMISSIVE: Accept both mTLS and plaintext (for migration scenarios)
+# - This policy uses STRICT for maximum security
+#
+# Observability:
+# - mTLS status visible in Istio metrics (connection_security_policy label)
+# - Can verify with: istioctl x describe pod <pod-name> -n demo
+# - Cilium policies work alongside this - both layers enforce security
 ---
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication

@@ -1,3 +1,20 @@
+# Hello App Deployment
+# A simple Python Flask application that connects to PostgreSQL and makes external API calls
+#
+# Key features:
+# - Deployed in 'demo' namespace with Istio ambient mode enabled
+# - Uses dedicated ServiceAccount for Istio identity (SPIFFE ID)
+# - Connects to postgres database
+# - Makes external HTTPS requests to api.github.com
+# - Health probes for liveness and readiness
+#
+# In Istio ambient mode:
+# - All traffic is transparently intercepted and routed through ztunnel
+# - mTLS is enforced between workloads via PeerAuthentication policy
+# - Identity is based on Kubernetes ServiceAccount (SPIFFE format)
+# - No sidecar injection required - ztunnel handles L4 proxy functionality
+
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,9 +41,11 @@ spec:
       containers:
         - name: hello-app
           image: hello-db-app:latest
-          imagePullPolicy: Never
+          imagePullPolicy: Never # Using local image built for kind
           ports:
             - containerPort: 8000
+          # Health probes for Kubernetes orchestration
+          # Note: In ambient mode, kubelet probes bypass ztunnel and appear as 'world' entity in Cilium policies
           livenessProbe:
             httpGet:
               path: /health
@@ -55,6 +74,9 @@ spec:
             - name: DB_NAME
               value: hellodb
 ---
+# Service for hello-app
+# Provides stable DNS name and ClusterIP for the hello-app workload
+# Traffic to this service is subject to Istio AuthorizationPolicy and Cilium NetworkPolicy
 apiVersion: v1
 kind: Service
 metadata:
@@ -64,6 +86,6 @@ spec:
   selector:
     app: hello-app
   ports:
-    - name: http
+    - name: http # Named port 'http' - required for Istio protocol detection
       port: 8000
       targetPort: 8000

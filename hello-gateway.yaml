@@ -1,17 +1,40 @@
+# Istio Gateway and HTTPRoute
+# Uses Kubernetes Gateway API v1 (standard API, not CRD-specific to Istio)
+#
+# Gateway:
+# - Creates an Istio gateway pod using gatewayClassName: istio
+# - The gateway pod runs in the demo namespace and gets its own ServiceAccount
+# - In ambient mode, the gateway is a regular workload that communicates via ztunnel
+# - Listens on port 80 for HTTP traffic (no TLS termination in this example)
+#
+# HTTPRoute:
+# - Defines routing rules from the Gateway to backend services
+# - All traffic with path prefix "/" is routed to hello-app:8000
+# - This is L7 (HTTP) routing - the gateway understands HTTP semantics
+#
+# Traffic Flow:
+# External → Gateway Pod → ztunnel (mTLS) → hello-app Pod
+#
+# Identity & Authorization:
+# - Gateway gets identity: cluster.local/ns/demo/sa/hello-gateway-istio (auto-created SA)
+# - hello-app AuthorizationPolicy allows only this gateway identity
+# - Cilium NetworkPolicy provides L3/L4 enforcement in addition to Istio L7 policy
+
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: hello-gateway
   namespace: demo
 spec:
-  gatewayClassName: istio
+  gatewayClassName: istio # Uses Istio's Gateway implementation
   listeners:
     - name: http
       port: 80
       protocol: HTTP
       allowedRoutes:
         namespaces:
-          from: Same
+          from: Same # Only HTTPRoutes from 'demo' namespace can attach
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -20,12 +43,12 @@ metadata:
   namespace: demo
 spec:
   parentRefs:
-    - name: hello-gateway
+    - name: hello-gateway # Attaches to the Gateway above
   rules:
     - matches:
         - path:
             type: PathPrefix
-            value: /
+            value: / # Match all paths
       backendRefs:
-        - name: hello-app
+        - name: hello-app # Routes to hello-app Service
           port: 8000

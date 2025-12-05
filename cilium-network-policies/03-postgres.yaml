@@ -1,0 +1,45 @@
+# postgres Workload Policies
+# All Cilium network policies specific to the postgres workload
+#
+# Includes:
+# - Ingress from hello-app
+# - Health check ingress
+
+---
+# Allow postgres to receive connections from hello-app
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgres
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: hello-app
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+---
+# Allow kubelet health checks to postgres (from host network)
+# In Istio ambient mode, health checks appear as 'world' due to traffic redirection
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: postgres-health-checks
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgres
+  ingress:
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

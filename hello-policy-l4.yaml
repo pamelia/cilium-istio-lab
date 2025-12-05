@@ -1,8 +1,30 @@
-# L4 AuthorizationPolicy to lock down access in the demo namespace
-# Only allows:
-# - hello-gateway-istio -> hello-app on port 8000
-# - hello-app -> postgres on port 5432
+# Istio L4 AuthorizationPolicy
+# Enforces identity-based access control using Istio's mTLS identities (SPIFFE)
+#
+# How it works:
+# - Istio ztunnel enforces these policies at L4 based on workload identity
+# - Identity is derived from Kubernetes ServiceAccount in SPIFFE format:
+#   cluster.local/ns/<namespace>/sa/<serviceaccount>
+# - mTLS certificates contain this identity (issued by istiod CA)
+# - ztunnel validates the peer identity from mTLS cert before allowing traffic
+#
+# Policy enforcement:
+# 1. hello-app-policy: Only allows traffic FROM hello-gateway-istio TO hello-app:8000
+# 2. postgres-policy: Only allows traffic FROM hello-app TO postgres:5432
+#
+# Relationship with Cilium:
+# - Cilium provides L3/L4 network-level enforcement
+# - Istio AuthorizationPolicy provides identity-based enforcement at L4/L7
+# - Both layers work together: traffic must pass Cilium policies AND Istio policies
+# - Cilium enforces "what IPs/ports can connect", Istio enforces "what identities can connect"
+#
+# Default behavior:
+# - Without explicit ALLOW rules, AuthorizationPolicy defaults to DENY
+# - This creates a zero-trust model where only explicitly allowed connections work
+
 ---
+# Allow ONLY the Istio Gateway to access hello-app
+# The gateway's ServiceAccount (hello-gateway-istio) is auto-created by Istio
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -11,18 +33,22 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: hello-app
+      app: hello-app # Applies to hello-app workload
   action: ALLOW
   rules:
     - from:
         - source:
             principals:
+              # SPIFFE identity format: cluster.local/ns/<namespace>/sa/<serviceaccount>
+              # This is extracted from the mTLS certificate presented by the gateway
               - cluster.local/ns/demo/sa/hello-gateway-istio
       to:
         - operation:
             ports:
-              - "8000"
+              - "8000" # Only allow access to port 8000
 ---
+# Allow ONLY hello-app to access postgres
+# This prevents any other workload from connecting to the database
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -31,14 +57,16 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: postgres
+      app: postgres # Applies to postgres workload
   action: ALLOW
   rules:
     - from:
         - source:
             principals:
+              # Only hello-app's ServiceAccount identity can connect
+              # This identity is verified via mTLS certificate
               - cluster.local/ns/demo/sa/hello-app
       to:
         - operation:
             ports:
-              - "5432"
+              - "5432" # Only allow access to PostgreSQL port

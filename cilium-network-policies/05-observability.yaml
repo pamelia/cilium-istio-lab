@@ -1,0 +1,28 @@
+# Observability Policies
+# Cilium network policies for monitoring and observability tools
+#
+# Includes:
+# - Prometheus metrics scraping
+
+---
+# Allow prometheus to scrape metrics from all pods in demo namespace
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: demo
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: prometheus
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15020"
+              protocol: TCP
+            - port: "15021"
+              protocol: TCP
+            - port: "15090"
+              protocol: TCP

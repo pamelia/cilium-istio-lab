@@ -1,0 +1,106 @@
+# Istio Ambient Mode HBONE Policies
+# These policies allow the HBONE (HTTP-Based Overlay Network Encapsulation) traffic
+# required for Istio Ambient mesh to function properly.
+#
+# In ambient mode, traffic is redirected through ztunnel (zero-trust tunnel) which
+# uses HBONE for secure pod-to-pod communication.
+#
+# HBONE Ports:
+# - 15008: HBONE port for mTLS traffic between ztunnels
+# - 15006: Inbound port for traffic to workloads (ztunnel listens here)
+# - 15001: Outbound port for traffic from workloads (iptables redirect target)
+# - 15020: Prometheus metrics and health checks
+#
+# Traffic Flow:
+# 1. Application sends traffic (e.g., to hello-app:8000)
+# 2. iptables redirects to local ztunnel port 15001
+# 3. ztunnel encrypts with mTLS and sends via HBONE (port 15008) to destination node
+# 4. Destination ztunnel receives on port 15008, decrypts, forwards to workload
+#
+# Why these policies are needed:
+# - Without them, Cilium's default-deny would block ztunnel communication
+# - Pods must be able to send traffic to ztunnel (egress to port 15001)
+# - Pods must be able to receive traffic from ztunnel (ingress from port 15006)
+# - ztunnel must be able to communicate with pods in demo namespace
+
+---
+# Allow HBONE ingress to all pods in demo namespace
+# Allows ztunnel to deliver decrypted traffic to destination workloads
+# Also allows pod-to-pod communication for HBONE ports (needed for ambient mesh)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-hbone-ingress
+  namespace: demo
+spec:
+  endpointSelector: {}
+  ingress:
+    # Allow HBONE from any pod in the demo namespace (for mesh communication)
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: demo
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "15006"
+              protocol: TCP
+            - port: "15001"
+              protocol: TCP
+    # Allow from ztunnel directly (traffic being delivered to this workload)
+    # Port 15020 is for health checks and metrics scraping
+    - fromEndpoints:
+        - matchLabels:
+            app: ztunnel
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "15006"
+              protocol: TCP
+            - port: "15001"
+              protocol: TCP
+            - port: "15020"
+              protocol: TCP
+---
+# Allow HBONE egress from all pods in demo namespace
+# Allows workloads to send traffic to ztunnel for encryption and forwarding
+# Port 15001 is the iptables redirect target for outbound traffic
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-hbone-egress
+  namespace: demo
+spec:
+  endpointSelector: {}
+  egress:
+    # Allow HBONE to any pod in the demo namespace (for direct pod-to-pod HBONE)
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: demo
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "15006"
+              protocol: TCP
+            - port: "15001"
+              protocol: TCP
+    # Allow to ztunnel directly (for sending traffic to be encrypted/forwarded)
+    # Port 15001 is where workload traffic is redirected to by iptables
+    # Port 15020 is for health checks and metrics
+    - toEndpoints:
+        - matchLabels:
+            app: ztunnel
+            io.kubernetes.pod.namespace: istio-system
+      toPorts:
+        - ports:
+            - port: "15008"
+              protocol: TCP
+            - port: "15006"
+              protocol: TCP
+            - port: "15001"
+              protocol: TCP
+            - port: "15020"
+              protocol: TCP

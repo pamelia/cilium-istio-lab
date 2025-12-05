@@ -1,0 +1,93 @@
+# hello-app Workload Policies
+# All Cilium network policies specific to the hello-app workload
+#
+# Includes:
+# - Egress to postgres database
+# - Egress to api.github.com (L7 SNI filtering)
+# - Ingress from the Istio gateway
+# - Health check ingress
+
+---
+# Allow hello-app to connect to postgres on port 5432
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hello-app-to-postgres
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: hello-app
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+---
+# Allow hello-app to connect ONLY to api.github.com on HTTPS using SNI-based L7 policy
+# This uses Cilium's TLS inspection to filter based on Server Name Indication (SNI)
+# api.github.com is ALLOWED - api.cloudflare.com is BLOCKED
+#
+# SNI filtering works with Istio Ambient mode because Cilium can inspect the
+# unencrypted SNI field in the TLS ClientHello before encryption begins.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hello-app-to-github
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: hello-app
+  egress:
+    # Only allow HTTPS to api.github.com via SNI filtering
+    # Other hosts like api.cloudflare.com will be blocked
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - "api.github.com"
+---
+# Allow ingress to hello-app from the istio gateway
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hello-app-ingress
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: hello-app
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            gateway.networking.k8s.io/gateway-name: hello-gateway
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+---
+# Allow kubelet health checks to hello-app (from host network)
+# In Istio ambient mode, health checks appear as 'world' due to traffic redirection
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hello-app-health-checks
+  namespace: demo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: hello-app
+  ingress:
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP

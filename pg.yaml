@@ -1,9 +1,41 @@
+# PostgreSQL Database Deployment
+# Backend database for the hello-app application
+#
+# Key features:
+# - Runs PostgreSQL 17 in demo namespace
+# - Uses dedicated ServiceAccount for Istio identity (SPIFFE)
+# - Password stored in Kubernetes Secret (base64 encoded, NOT encrypted)
+# - Single replica (stateless for demo - data is ephemeral)
+# - No persistent volume - data is lost on pod restart
+#
+# In Istio ambient mode:
+# - All traffic to postgres is encrypted with mTLS via ztunnel
+# - Only hello-app ServiceAccount can connect (enforced by AuthorizationPolicy)
+# - Identity: spiffe://cluster.local/ns/demo/sa/postgres
+#
+# Security layers:
+# 1. Cilium NetworkPolicy: Restricts L3/L4 network access (IP + port level)
+# 2. Istio AuthorizationPolicy: Restricts based on workload identity (SPIFFE)
+# 3. Istio PeerAuthentication: Enforces mTLS encryption
+# 4. PostgreSQL authentication: Username/password (application level)
+#
+# Production considerations:
+# - Use StatefulSet with PersistentVolume for data durability
+# - Store secrets in external secret manager (e.g., Vault, AWS Secrets Manager)
+# - Enable PostgreSQL SSL/TLS for defense in depth
+# - Use stronger passwords and rotate regularly
+# - Consider read replicas for high availability
+
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: postgres
   namespace: demo
 ---
+# Secret for PostgreSQL password
+# WARNING: Kubernetes Secrets are only base64 encoded, NOT encrypted at rest by default
+# Production: Use encrypted secrets, external secret managers, or sealed secrets
 apiVersion: v1
 kind: Secret
 metadata:
@@ -12,6 +44,7 @@ metadata:
 type: Opaque
 data:
   # echo -n "hello" | base64
+  # This is a WEAK password for demo purposes only
   POSTGRES_PASSWORD: aGVsbG8=
 ---
 apiVersion: apps/v1
@@ -20,7 +53,7 @@ metadata:
   name: postgres
   namespace: demo
 spec:
-  replicas: 1
+  replicas: 1 # Single replica - not HA, data is ephemeral without PV
   selector:
     matchLabels:
       app: postgres
@@ -30,7 +63,7 @@ spec:
         app: postgres
         version: v1
     spec:
-      serviceAccountName: postgres
+      serviceAccountName: postgres # Used for Istio identity
       containers:
         - name: postgres
           image: postgres:17
@@ -43,15 +76,20 @@ spec:
                   name: postgres-secret
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
-              value: hellodb
+              value: hellodb # Database is created automatically on first start
           ports:
             - containerPort: 5432
+          # TCP readiness probe - checks if port is accepting connections
+          # In ambient mode, kubelet probes bypass ztunnel (appear as 'world' in Cilium)
           readinessProbe:
             tcpSocket:
               port: 5432
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
+# Service for postgres
+# Provides stable DNS name (postgres.demo.svc.cluster.local) and ClusterIP
+# Traffic to this service is protected by mTLS and authorization policies
 apiVersion: v1
 kind: Service
 metadata:
@@ -61,6 +99,6 @@ spec:
   selector:
     app: postgres
   ports:
-    - name: tcp
+    - name: tcp # Named port for Istio protocol detection
       port: 5432
       targetPort: 5432
