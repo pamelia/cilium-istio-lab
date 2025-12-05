@@ -26,6 +26,10 @@ kind: Gateway
 metadata:
   name: hello-gateway
   namespace: demo
+  annotations:
+    # Set service type to ClusterIP for kind compatibility
+    # LoadBalancer (default) doesn't work in kind without MetalLB
+    networking.istio.io/service-type: ClusterIP
 spec:
   gatewayClassName: istio # Uses Istio's Gateway implementation
   listeners:

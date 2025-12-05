@@ -387,6 +387,8 @@ kubectl apply -f pg.yaml
 kubectl apply -f hello-app.yaml
 
 # Deploy gateway
+# Note: The Gateway resource has an annotation to create the service as ClusterIP
+# instead of LoadBalancer (default), which is required for kind clusters
 kubectl apply -f hello-gateway.yaml
 
 # Apply Istio policies
@@ -421,6 +423,12 @@ kubectl get pods -n demo
 
 # Verify mTLS is enforced (check PeerAuthentication)
 kubectl get peerauthentication -n demo -o yaml
+
+# Verify Gateway service is ClusterIP (not LoadBalancer)
+kubectl get svc -n demo hello-gateway-istio
+
+# If the service is LoadBalancer (from a previous deployment), patch it:
+# kubectl patch svc hello-gateway-istio -n demo -p '{"spec":{"type":"ClusterIP"}}'
 ```
 
 ## Testing
@@ -428,7 +436,7 @@ kubectl get peerauthentication -n demo -o yaml
 ### Access the Application
 
 ```bash
-# Get gateway external IP (for LoadBalancer) or use port-forward
+# The gateway service is ClusterIP (for kind compatibility), so use port-forward
 kubectl port-forward -n demo svc/hello-gateway-istio 8080:80
 
 # Access application (shows status page with DB, GitHub, and Cloudflare connectivity)
@@ -589,64 +597,7 @@ istioctl x describe pod <pod-name> -n demo
 kubectl get ciliumendpoints -n demo <pod-name> -o yaml
 ```
 
-### Scenario 4: Restrict Outbound to Specific IP Range
 
-**Requirement**: Only allow hello-app to access `10.0.0.0/8` range externally.
-
-**Solution**: Use Cilium CIDR-based policy:
-
-```yaml
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: hello-app-cidr-egress
-  namespace: demo
-spec:
-  endpointSelector:
-    matchLabels:
-      app: hello-app
-  egress:
-    - toCIDR:
-        - 10.0.0.0/8
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-```
-
-### Scenario 5: Enable L7 HTTP Policies with Waypoint
-
-**Requirement**: Enforce HTTP method and path-based policies.
-
-**Solution**: Deploy waypoint proxy for L7 capabilities:
-
-```bash
-# Create waypoint for demo namespace
-istioctl x waypoint apply --namespace demo
-
-# Add L7 AuthorizationPolicy
-kubectl apply -f - <<EOF
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: hello-app-l7-policy
-  namespace: demo
-spec:
-  selector:
-    matchLabels:
-      app: hello-app
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            principals:
-              - cluster.local/ns/demo/sa/hello-gateway-istio
-      to:
-        - operation:
-            methods: ["GET", "POST"]
-            paths: ["/", "/health", "/github"]
-EOF
-```
 
 ## References
 
