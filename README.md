@@ -353,7 +353,15 @@ Cilium becomes the CNI and handles pod networking.
 
 **Installed version**: Cilium 1.18.3
 
-### 3. Install Istio Ambient Mode
+### 3. Install Gateway API CRDs
+
+```bash
+kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/experimental-install.yaml
+```
+
+This installs the Kubernetes Gateway API CRDs required by Istio.
+
+### 4. Install Istio Ambient Mode
 
 ```bash
 istioctl install --set profile=ambient -y
@@ -366,7 +374,7 @@ This installs:
 
 **Installed version**: Istio 1.28.1
 
-### 4. Enable Ambient Mode for demo Namespace
+### 5. Enable Ambient Mode for demo Namespace
 
 ```bash
 kubectl create namespace demo
@@ -375,7 +383,7 @@ kubectl label namespace demo istio.io/dataplane-mode=ambient
 
 All pods in this namespace will automatically use ztunnel for mTLS.
 
-### 5. Deploy Application
+### 6. Deploy Application
 
 ```bash
 # Build application image (if not already built)
@@ -396,7 +404,7 @@ kubectl apply -f peer-authentication.yaml
 kubectl apply -f hello-policy-l4.yaml
 ```
 
-### 6. Apply Cilium Network Policies
+### 7. Apply Cilium Network Policies
 
 ```bash
 kubectl apply -f cilium-network-policies/
@@ -409,7 +417,7 @@ Apply policies in order:
 4. Gateway policies
 5. Observability policies
 
-### 7. Verify Installation
+### 8. Verify Installation
 
 ```bash
 # Check Cilium policy enforcement
